@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/build/
+.npm
+
+# Environment
+.env
+*.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Audio files
+*.mp3
+*.wav
+*.ogg
+
+# Whisper model cache
+/backend/whisper_models/
+
+# MinIO data
+minio_data/
+
+# PostgreSQL data
+pgdata/
+
+# Reports
+*.xlsx
