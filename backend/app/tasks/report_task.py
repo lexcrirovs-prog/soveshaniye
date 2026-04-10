@@ -2,8 +2,6 @@ import logging
 from collections import defaultdict
 from datetime import datetime
 
-from sqlalchemy import func
-
 from app.database import SessionLocal
 from app.models import Analysis, Call, Employee, ExportJob, Transcript
 from app.services.analyzer import aggregate_department, aggregate_employee

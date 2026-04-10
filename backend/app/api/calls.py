@@ -6,7 +6,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models import Analysis, Call, Employee, Transcript
+from app.models import Analysis, Call, Transcript
 from app.schemas import CallDetail, CallListResponse, CallOut, ReanalyzeRequest
 from app.services.bitrix import get_period_dates
 from app.services.storage import storage_service
