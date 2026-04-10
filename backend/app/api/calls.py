@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models import Analysis, Call, Employee, Transcript
 from app.schemas import CallDetail, CallListResponse, CallOut, ReanalyzeRequest
+from app.services.bitrix import get_period_dates
 from app.services.storage import storage_service
 
 router = APIRouter(prefix="/api/calls", tags=["calls"])
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/api/calls", tags=["calls"])
 @router.get("", response_model=CallListResponse)
 def list_calls(
     employee_id: Optional[int] = None,
+    period: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     direction: Optional[str] = None,
@@ -34,10 +36,16 @@ def list_calls(
 
     if employee_id:
         query = query.filter(Call.employee_id == employee_id)
-    if date_from:
-        query = query.filter(Call.call_date >= datetime.fromisoformat(date_from))
-    if date_to:
-        query = query.filter(Call.call_date <= datetime.fromisoformat(date_to))
+
+    # Period filter
+    if period and not date_from and not date_to:
+        d_from, d_to = get_period_dates(period)
+        query = query.filter(Call.call_date >= d_from, Call.call_date <= d_to)
+    else:
+        if date_from:
+            query = query.filter(Call.call_date >= datetime.fromisoformat(date_from))
+        if date_to:
+            query = query.filter(Call.call_date <= datetime.fromisoformat(date_to))
     if direction:
         query = query.filter(Call.direction == direction)
     if status:

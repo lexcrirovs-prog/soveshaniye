@@ -95,6 +95,9 @@ def analyze_call_task(self, call_id: int, script_id: int | None = None):
 
         logger.info("Analyzed call %d: overall_score=%s", call_id, scores.get("overall"))
 
+        # Post-analysis integrations
+        _post_analysis_integrations(call, analysis, employee_name)
+
         # Check if all calls in export job are analyzed
         _check_job_completion(db, call)
 
@@ -110,6 +113,60 @@ def analyze_call_task(self, call_id: int, script_id: int | None = None):
         raise self.retry(exc=e, countdown=120)
     finally:
         db.close()
+
+
+def _post_analysis_integrations(call: Call, analysis: Analysis, employee_name: str):
+    """Run post-analysis integrations: Telegram, CRM."""
+    from app.config import settings
+
+    overall = analysis.overall_score or 0
+
+    # Telegram notification
+    if settings.telegram_notifications:
+        try:
+            from app.services.telegram import notify_call_analyzed, notify_low_score
+
+            notify_call_analyzed(
+                employee_name=employee_name,
+                direction=call.direction,
+                duration_sec=call.duration_sec,
+                overall_score=overall,
+                deal_name=call.deal_name or "",
+                summary=analysis.summary or "",
+                call_id=call.id,
+            )
+
+            if overall < settings.low_score_alert_threshold:
+                notify_low_score(
+                    employee_name=employee_name,
+                    call_id=call.id,
+                    overall_score=overall,
+                    weaknesses=analysis.weaknesses or [],
+                )
+        except Exception as e:
+            logger.error("Telegram notification failed: %s", e)
+
+    # CRM auto-comment
+    if settings.crm_auto_comment and call.deal_id:
+        try:
+            from app.services.crm_integration import post_analysis_to_crm
+
+            employee_bitrix_id = call.employee.bitrix_id if call.employee else None
+            post_analysis_to_crm(
+                deal_id=call.deal_id,
+                employee_bitrix_id=employee_bitrix_id,
+                employee_name=employee_name,
+                direction=call.direction,
+                overall_score=overall,
+                summary=analysis.summary or "",
+                crm_note=analysis.crm_note_suggestion or "",
+                strengths=analysis.strengths or [],
+                weaknesses=analysis.weaknesses or [],
+                next_step_agreed=analysis.next_step_agreed or False,
+                recommendations=analysis.recommendations or [],
+            )
+        except Exception as e:
+            logger.error("CRM integration failed: %s", e)
 
 
 def _check_job_completion(db, call: Call):

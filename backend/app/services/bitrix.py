@@ -11,6 +11,18 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 50
 
 
+def _parse_datetime(value: str) -> datetime:
+    """Parse datetime string from Bitrix24 API."""
+    if not value:
+        return datetime.now()
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    return datetime.now()
+
+
 class BitrixClient:
     def __init__(self, webhook_url: Optional[str] = None):
         self.webhook_url = (webhook_url or settings.bitrix_webhook_url).rstrip("/")
@@ -18,7 +30,7 @@ class BitrixClient:
 
     def _call(self, method: str, params: Optional[dict] = None) -> dict:
         url = f"{self.webhook_url}/{method}"
-        response = self.client.get(url, params=params or {})
+        response = self.client.post(url, json=params or {})
         response.raise_for_status()
         return response.json()
 
@@ -45,10 +57,12 @@ class BitrixClient:
         return results
 
     def get_employees(self, department_id: Optional[int] = None) -> list[dict]:
-        params: dict[str, Any] = {"FILTER[ACTIVE]": "true"}
+        params: dict[str, Any] = {
+            "FILTER": {"ACTIVE": True},
+            "SELECT": ["ID", "NAME", "LAST_NAME", "WORK_POSITION", "UF_DEPARTMENT"],
+        }
         if department_id:
-            params["FILTER[UF_DEPARTMENT]"] = department_id
-        params["SELECT[]"] = ["ID", "NAME", "LAST_NAME", "WORK_POSITION", "UF_DEPARTMENT"]
+            params["FILTER"]["UF_DEPARTMENT"] = department_id
 
         items = self._call_all("user.get", params)
         employees = []
@@ -64,9 +78,11 @@ class BitrixClient:
 
     def get_deals(self, date_from: datetime, date_to: datetime) -> list[dict]:
         params = {
-            "FILTER[>=DATE_CREATE]": date_from.strftime("%Y-%m-%d"),
-            "FILTER[<=DATE_CREATE]": date_to.strftime("%Y-%m-%d"),
-            "SELECT[]": ["ID", "TITLE", "ASSIGNED_BY_ID", "STAGE_ID", "OPPORTUNITY", "COMMENTS"],
+            "FILTER": {
+                ">=DATE_CREATE": date_from.strftime("%Y-%m-%d"),
+                "<=DATE_CREATE": date_to.strftime("%Y-%m-%d"),
+            },
+            "SELECT": ["ID", "TITLE", "ASSIGNED_BY_ID", "STAGE_ID", "OPPORTUNITY", "COMMENTS"],
         }
         items = self._call_all("crm.deal.list", params)
         return [
@@ -83,8 +99,10 @@ class BitrixClient:
 
     def get_calls(self, date_from: datetime, date_to: datetime) -> list[dict]:
         params = {
-            "FILTER[>=CALL_START_DATE]": date_from.strftime("%Y-%m-%dT%H:%M:%S"),
-            "FILTER[<=CALL_START_DATE]": date_to.strftime("%Y-%m-%dT%H:%M:%S"),
+            "FILTER": {
+                ">=CALL_START_DATE": date_from.strftime("%Y-%m-%dT%H:%M:%S"),
+                "<=CALL_START_DATE": date_to.strftime("%Y-%m-%dT%H:%M:%S"),
+            },
         }
         items = self._call_all("voximplant.statistic.get", params)
         calls = []
@@ -97,7 +115,7 @@ class BitrixClient:
                 "portal_user_id": int(item.get("PORTAL_USER_ID", 0)),
                 "phone_number": item.get("PHONE_NUMBER", ""),
                 "duration_sec": int(item.get("CALL_DURATION", 0)),
-                "call_date": item.get("CALL_START_DATE", ""),
+                "call_date": _parse_datetime(item.get("CALL_START_DATE", "")),
                 "record_file_id": item.get("RECORD_FILE_ID"),
                 "record_url": item.get("RECORD_URL", ""),
             })
@@ -109,7 +127,10 @@ class BitrixClient:
 
         # Try direct deal search by phone
         try:
-            params = {"FILTER[PHONE]": phone, "SELECT[]": ["ID", "TITLE", "STAGE_ID", "OPPORTUNITY"]}
+            params = {
+                "FILTER": {"PHONE": phone},
+                "SELECT": ["ID", "TITLE", "STAGE_ID", "OPPORTUNITY"],
+            }
             items = self._call_all("crm.deal.list", params)
             for item in items:
                 deals.append({
@@ -123,13 +144,13 @@ class BitrixClient:
 
         # Try via contacts
         try:
-            contact_params = {"FILTER[PHONE]": phone, "SELECT[]": ["ID"]}
+            contact_params = {"FILTER": {"PHONE": phone}, "SELECT": ["ID"]}
             contacts = self._call_all("crm.contact.list", contact_params)
             for contact in contacts:
                 contact_id = int(contact["ID"])
                 deal_params = {
-                    "FILTER[CONTACT_ID]": contact_id,
-                    "SELECT[]": ["ID", "TITLE", "STAGE_ID", "OPPORTUNITY"],
+                    "FILTER": {"CONTACT_ID": contact_id},
+                    "SELECT": ["ID", "TITLE", "STAGE_ID", "OPPORTUNITY"],
                 }
                 contact_deals = self._call_all("crm.deal.list", deal_params)
                 for item in contact_deals:

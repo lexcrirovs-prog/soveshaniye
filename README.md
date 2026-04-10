@@ -89,24 +89,58 @@ docker compose up --build
 
 ## Автоматизация
 
-Celery Beat автоматически запускает еженедельную выгрузку каждый понедельник в 02:00 (МСК).
+- **Celery Beat** — автовыгрузка каждый понедельник в 02:00 (МСК)
+- **Bitrix24 Webhook** — real-time обработка при завершении звонка (`POST /api/webhooks/bitrix24/call-end`)
+- **Telegram-бот** — уведомления о проанализированных звонках, алерты при низких оценках
+- **Email-рассылка** — еженедельный отчёт руководителю с Excel-приложением
+- **CRM-интеграция** — автозапись комментариев в сделку + создание follow-up задач
+
+### Настройка уведомлений
+
+В `.env`:
+```env
+# Telegram
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF
+TELEGRAM_CHAT_ID=-1001234567890
+TELEGRAM_NOTIFICATIONS=true
+
+# Email
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=user@gmail.com
+SMTP_PASSWORD=app-password
+NOTIFY_EMAIL_TO=manager@company.ru
+EMAIL_NOTIFICATIONS=true
+
+# CRM auto-comment
+CRM_AUTO_COMMENT=true
+LOW_SCORE_ALERT_THRESHOLD=4
+```
+
+### Настройка Bitrix24 Webhook (real-time)
+
+1. Перейдите в Битрикс24 → Настройки → Вебхуки → Добавить исходящий вебхук
+2. Событие: `ONVOXIMPLANTCALLEND`
+3. URL: `https://your-server/api/webhooks/bitrix24/call-end`
 
 ## Архитектура
 
 ```
+                                ┌─── Telegram Bot
+                                │
 Битрикс24 API ──→ [export_task] ──→ PostgreSQL
-                        │
-                   MinIO (аудио)
-                        │
-                  [transcribe_task]
+       │                │
+  Webhook (RT)     MinIO (аудио)
+       │                │
+       └────→ [transcribe_task]
                         │
                   faster-whisper
                         │
-                  [analyze_task]
+                  [analyze_task] ──→ CRM (auto-comment)
+                        │               │
+                   Claude API      Telegram Alert
                         │
-                   Claude API
-                        │
-                  [report_task]
+                  [report_task] ──→ Email + Telegram
                         │
                   Excel (MinIO)
 ```
@@ -137,4 +171,7 @@ GET/POST/PUT/DELETE /api/scripts     — управление скриптами
 GET    /api/dashboard/summary        — сводка
 GET    /api/dashboard/scores         — рейтинг
 GET    /api/dashboard/trends         — тренды
+
+POST   /api/webhooks/bitrix24/call-end — webhook real-time обработка
+GET    /api/health                   — проверка здоровья
 ```

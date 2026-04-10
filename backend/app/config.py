@@ -31,6 +31,24 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
 
+    # Telegram
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
+    # Email / SMTP
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    notify_email_to: str = ""  # comma-separated
+
+    # Features
+    crm_auto_comment: bool = False  # Auto-post analysis to CRM deals
+    telegram_notifications: bool = False
+    email_notifications: bool = False
+    low_score_alert_threshold: int = 4  # Alert when score below this
+
     # App
     secret_key: str = "changeme_secret_key"
     cors_origins: str = "http://localhost:3000,http://localhost:80"

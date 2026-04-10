@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import calls, dashboard, employees, exports, scripts
+from app.api import calls, dashboard, employees, exports, scripts, webhooks
 from app.config import settings
 from app.services.storage import storage_service
 
@@ -42,6 +42,7 @@ app.include_router(calls.router)
 app.include_router(employees.router)
 app.include_router(scripts.router)
 app.include_router(dashboard.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/api/health")

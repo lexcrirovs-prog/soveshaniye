@@ -233,6 +233,9 @@ def generate_report_task(self, job_id: int):
 
         logger.info("Report generated for job %d: %s", job_id, report_path)
 
+        # Send notifications
+        _send_report_notifications(job, summary, report_bytes)
+
     except Exception as e:
         logger.exception("Report generation failed for job %d: %s", job_id, e)
         try:
@@ -246,3 +249,39 @@ def generate_report_task(self, job_id: int):
         raise
     finally:
         db.close()
+
+
+def _send_report_notifications(job, summary: dict, report_bytes: bytes):
+    """Send Telegram and email notifications about completed report."""
+    from app.config import settings
+
+    # Telegram
+    if settings.telegram_notifications:
+        try:
+            from app.services.telegram import notify_export_completed
+
+            notify_export_completed(
+                job_id=job.id,
+                period=summary.get("period", job.period),
+                total_calls=summary.get("total_calls", 0),
+                avg_score=summary.get("avg_score"),
+            )
+        except Exception as e:
+            logger.error("Telegram notification failed: %s", e)
+
+    # Email
+    if settings.email_notifications and settings.notify_email_to:
+        try:
+            from app.services.email_notify import send_weekly_report
+
+            recipients = [e.strip() for e in settings.notify_email_to.split(",") if e.strip()]
+            send_weekly_report(
+                to_emails=recipients,
+                period=summary.get("period", job.period),
+                total_calls=summary.get("total_calls", 0),
+                avg_score=summary.get("avg_score"),
+                top_problems=summary.get("top_problems", []),
+                report_bytes=report_bytes,
+            )
+        except Exception as e:
+            logger.error("Email notification failed: %s", e)
