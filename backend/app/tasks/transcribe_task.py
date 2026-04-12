@@ -1,12 +1,30 @@
 import logging
 
+from sqlalchemy import update
+
 from app.database import SessionLocal
-from app.models import Call, Transcript
+from app.models import Call, ExportJob, Transcript
 from app.services.storage import storage_service
 from app.services.transcriber import transcribe
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def _increment_transcribed(db, call: Call):
+    """Atomically increment transcribed counter on the export job."""
+    if not call.export_job_id:
+        return
+    db.execute(
+        update(ExportJob)
+        .where(ExportJob.id == call.export_job_id)
+        .values(transcribed=ExportJob.transcribed + 1)
+    )
+    # Update job status to 'transcribing' if still in earlier stage
+    job = db.query(ExportJob).get(call.export_job_id)
+    if job and job.status in ("running", "transcribing"):
+        job.status = "transcribing"
+    db.commit()
 
 
 @celery_app.task(name="app.tasks.transcribe_task.transcribe_call", bind=True, max_retries=2)
@@ -28,7 +46,6 @@ def transcribe_call(self, call_id: int):
         existing = db.query(Transcript).filter_by(call_id=call_id).first()
         if existing:
             logger.info("Call %d already transcribed", call_id)
-            # Still trigger analysis
             from app.tasks.analyze_task import analyze_call_task
             analyze_call_task.delay(call_id)
             return
@@ -38,7 +55,7 @@ def transcribe_call(self, call_id: int):
         if not audio_data:
             logger.error("Failed to download audio for call %d", call_id)
             call.status = "transcription_failed"
-            db.commit()
+            _increment_transcribed(db, call)
             return
 
         # Transcribe
@@ -48,7 +65,7 @@ def transcribe_call(self, call_id: int):
         result = transcribe(audio_data)
         if not result:
             call.status = "transcription_failed"
-            db.commit()
+            _increment_transcribed(db, call)
             return
 
         # Save transcript
@@ -62,7 +79,7 @@ def transcribe_call(self, call_id: int):
         )
         db.add(transcript)
         call.status = "transcribed"
-        db.commit()
+        _increment_transcribed(db, call)
 
         logger.info("Transcribed call %d: %d chars", call_id, len(result["text"]))
 
@@ -76,7 +93,7 @@ def transcribe_call(self, call_id: int):
             call = db.query(Call).get(call_id)
             if call:
                 call.status = "transcription_failed"
-                db.commit()
+                _increment_transcribed(db, call)
         except Exception:
             pass
         raise self.retry(exc=e, countdown=60)

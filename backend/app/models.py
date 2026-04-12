@@ -127,7 +127,9 @@ class ExportJob(Base):
     started_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
     total_calls = Column(Integer, default=0)
-    processed = Column(Integer, default=0)
+    processed = Column(Integer, default=0)       # downloaded
+    transcribed = Column(Integer, default=0)      # transcribed
+    analyzed = Column(Integer, default=0)         # analyzed
     error_msg = Column(Text)
     report_path = Column(String(512))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -115,6 +115,8 @@ export interface ExportJob {
   finished_at?: string
   total_calls: number
   processed: number
+  transcribed: number
+  analyzed: number
   error_msg?: string
   report_path?: string
   created_at?: string

@@ -1,5 +1,7 @@
 import logging
 
+from sqlalchemy import update
+
 from app.database import SessionLocal
 from app.models import Analysis, Call, ExportJob, SalesScript, Transcript
 from app.services.analyzer import analyze_call
@@ -170,22 +172,30 @@ def _post_analysis_integrations(call: Call, analysis: Analysis, employee_name: s
 
 
 def _check_job_completion(db, call: Call):
-    """Check if all calls in the export job are analyzed, trigger report generation."""
+    """Increment analyzed counter, check if all done, trigger report."""
     if not call.export_job_id:
         return
 
+    # Atomically increment analyzed counter
+    db.execute(
+        update(ExportJob)
+        .where(ExportJob.id == call.export_job_id)
+        .values(analyzed=ExportJob.analyzed + 1)
+    )
+    db.commit()
+
+    # Refresh to get current values
     job = db.query(ExportJob).get(call.export_job_id)
     if not job:
         return
 
-    total = db.query(Call).filter(Call.export_job_id == job.id).count()
-    analyzed = (
-        db.query(Call)
-        .filter(Call.export_job_id == job.id, Call.status.in_(["analyzed", "analysis_failed"]))
-        .count()
-    )
+    # Update status to analyzing if not already
+    if job.status in ("transcribing", "analyzing"):
+        job.status = "analyzing"
+        db.commit()
 
-    if analyzed >= total:
+    total = db.query(Call).filter(Call.export_job_id == job.id).count()
+    if job.analyzed >= total:
         job.status = "generating_report"
         db.commit()
 

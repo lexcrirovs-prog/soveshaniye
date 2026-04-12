@@ -134,6 +134,8 @@ class ExportJobOut(BaseModel):
     finished_at: Optional[datetime] = None
     total_calls: int = 0
     processed: int = 0
+    transcribed: int = 0
+    analyzed: int = 0
     error_msg: Optional[str] = None
     report_path: Optional[str] = None
     created_at: Optional[datetime] = None
