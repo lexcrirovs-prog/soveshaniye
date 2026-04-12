@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
 
-    # Anthropic
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
+    # OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
 
     # Telegram
     telegram_bot_token: str = ""

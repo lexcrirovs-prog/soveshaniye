@@ -1,6 +1,6 @@
 # Call Analytics - Анализ звонков отдела продаж из Битрикс24
 
-Система автоматизированного аудита звонков отдела продаж. Подключается к Битрикс24, выгружает звонки менеджеров, транскрибирует через faster-whisper, анализирует через Claude API и формирует Excel-отчёты.
+Система автоматизированного аудита звонков отдела продаж. Подключается к Битрикс24, выгружает звонки менеджеров, транскрибирует через faster-whisper, анализирует через OpenAI API (GPT-4o) и формирует Excel-отчёты.
 
 ## Стек технологий
 
@@ -10,7 +10,7 @@
 | Очередь задач | Celery + Redis |
 | Планировщик | Celery Beat |
 | Транскрибация | faster-whisper (модель small) |
-| LLM-анализ | Claude API (claude-sonnet-4-20250514) |
+| LLM-анализ | OpenAI API (GPT-4o) |
 | БД | PostgreSQL 16 |
 | Хранилище аудио | MinIO (S3-совместимое) |
 | Frontend | React + Tailwind CSS + Recharts |
@@ -32,7 +32,7 @@ cp .env.example .env
 
 ```env
 BITRIX_WEBHOOK_URL=https://your-domain.bitrix24.ru/rest/1/webhook-key/
-ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 ```
 
 ### 3. Запуск
@@ -57,7 +57,7 @@ docker compose up --build
 1. Выгрузит сотрудников и звонки из Битрикс24
 2. Скачает аудиозаписи в MinIO
 3. Транскрибирует через faster-whisper
-4. Проанализирует каждый звонок через Claude API
+4. Проанализирует каждый звонок через OpenAI API (GPT-4o)
 5. Сформирует Excel-отчёт (7 листов)
 
 ### 2. Просмотр результатов
@@ -138,7 +138,7 @@ LOW_SCORE_ALERT_THRESHOLD=4
                         │
                   [analyze_task] ──→ CRM (auto-comment)
                         │               │
-                   Claude API      Telegram Alert
+                   OpenAI API      Telegram Alert
                         │
                   [report_task] ──→ Email + Telegram
                         │

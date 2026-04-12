@@ -3,7 +3,7 @@ import logging
 import re
 from typing import Any, Optional
 
-import anthropic
+from openai import OpenAI
 
 from app.config import settings
 
@@ -119,6 +119,31 @@ DEPARTMENT_AGGREGATE_PROMPT = """На основе анализа всех ме�
 }}"""
 
 
+def _get_client() -> OpenAI:
+    """Get OpenAI client instance."""
+    return OpenAI(api_key=settings.openai_api_key)
+
+
+def _chat(system: str, user: str) -> Optional[str]:
+    """Send a chat completion request to OpenAI and return response text."""
+    client = _get_client()
+    try:
+        response = client.chat.completions.create(
+            model=settings.openai_model,
+            max_tokens=4096,
+            temperature=0.3,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error("OpenAI API call failed: %s", e)
+        return None
+
+
 def _parse_json_response(text: str) -> Optional[dict]:
     """Extract JSON from LLM response, handling markdown code blocks."""
     # Try direct parse
@@ -156,9 +181,9 @@ def analyze_call(
     stage: str = "Не указана",
     sales_script: Optional[str] = None,
 ) -> Optional[dict]:
-    """Analyze a single call transcript using Claude API."""
-    if not settings.anthropic_api_key:
-        logger.error("ANTHROPIC_API_KEY not set")
+    """Analyze a single call transcript using OpenAI API."""
+    if not settings.openai_api_key:
+        logger.error("OPENAI_API_KEY not set")
         return None
 
     script_section = ""
@@ -178,23 +203,15 @@ def analyze_call(
         transcript=transcript,
     )
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    try:
-        message = client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=4096,
-            system=CALL_ANALYSIS_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        response_text = message.content[0].text
-        result = _parse_json_response(response_text)
-        if result:
-            result["_raw_response"] = response_text
-            result["_model_used"] = settings.anthropic_model
-        return result
-    except Exception as e:
-        logger.error("Claude API call failed: %s", e)
+    response_text = _chat(CALL_ANALYSIS_SYSTEM_PROMPT, user_prompt)
+    if not response_text:
         return None
+
+    result = _parse_json_response(response_text)
+    if result:
+        result["_raw_response"] = response_text
+        result["_model_used"] = settings.openai_model
+    return result
 
 
 def aggregate_employee(
@@ -204,7 +221,7 @@ def aggregate_employee(
     date_to: str,
 ) -> Optional[dict]:
     """Generate aggregated employee profile from multiple call analyses."""
-    if not settings.anthropic_api_key or not analyses:
+    if not settings.openai_api_key or not analyses:
         return None
 
     prompt = EMPLOYEE_AGGREGATE_PROMPT.format(
@@ -215,36 +232,24 @@ def aggregate_employee(
         analyses_json=json.dumps(analyses, ensure_ascii=False, indent=2),
     )
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    try:
-        message = client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return _parse_json_response(message.content[0].text)
-    except Exception as e:
-        logger.error("Employee aggregation failed: %s", e)
+    system = "Ты — аналитик отдела продаж. Отвечай строго в формате JSON."
+    response_text = _chat(system, prompt)
+    if not response_text:
         return None
+    return _parse_json_response(response_text)
 
 
 def aggregate_department(profiles: list[dict[str, Any]]) -> Optional[dict]:
     """Generate department-level analysis from employee profiles."""
-    if not settings.anthropic_api_key or not profiles:
+    if not settings.openai_api_key or not profiles:
         return None
 
     prompt = DEPARTMENT_AGGREGATE_PROMPT.format(
         profiles_json=json.dumps(profiles, ensure_ascii=False, indent=2),
     )
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    try:
-        message = client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return _parse_json_response(message.content[0].text)
-    except Exception as e:
-        logger.error("Department aggregation failed: %s", e)
+    system = "Ты — руководитель аналитики отдела продаж. Отвечай строго в формате JSON."
+    response_text = _chat(system, prompt)
+    if not response_text:
         return None
+    return _parse_json_response(response_text)
