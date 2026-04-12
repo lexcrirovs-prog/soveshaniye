@@ -38,6 +38,13 @@ def transcribe_call(self, call_id: int):
             logger.error("Call %d not found", call_id)
             return
 
+        # Check if job was cancelled
+        if call.export_job_id:
+            job = db.query(ExportJob).get(call.export_job_id)
+            if job and job.status == "cancelled":
+                logger.info("Skipping call %d — job %d cancelled", call_id, job.id)
+                return
+
         if not call.audio_path:
             logger.error("Call %d has no audio", call_id)
             return

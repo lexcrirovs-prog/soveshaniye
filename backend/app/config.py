@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     minio_secure: bool = False
 
     # Whisper
+    whisper_provider: str = "openai"  # "openai" (cloud API) or "local" (faster-whisper)
     whisper_model: str = "small"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"

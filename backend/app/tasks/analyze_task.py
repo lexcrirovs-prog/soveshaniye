@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="app.tasks.analyze_task.analyze_call_task", bind=True, max_retries=2)
 def analyze_call_task(self, call_id: int, script_id: int | None = None):
-    """Analyze a single call transcript using Claude API."""
+    """Analyze a single call transcript using OpenAI API."""
     db = SessionLocal()
 
     try:
@@ -20,6 +20,13 @@ def analyze_call_task(self, call_id: int, script_id: int | None = None):
         if not call:
             logger.error("Call %d not found", call_id)
             return
+
+        # Check if job was cancelled
+        if call.export_job_id:
+            job = db.query(ExportJob).get(call.export_job_id)
+            if job and job.status == "cancelled":
+                logger.info("Skipping analysis for call %d — job %d cancelled", call_id, job.id)
+                return
 
         transcript = db.query(Transcript).filter_by(call_id=call_id).first()
         if not transcript:

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Play, RefreshCw, FileSpreadsheet, Download, CheckCircle2, Loader2, Clock, AlertCircle } from 'lucide-react'
-import { fetchExports, createExport, fetchExport, fetchExportReport, type ExportJob } from '../api/client'
+import { Play, RefreshCw, Download, CheckCircle2, Loader2, Clock, AlertCircle, StopCircle, XCircle } from 'lucide-react'
+import { fetchExports, createExport, fetchExport, fetchExportReport, cancelExport, type ExportJob } from '../api/client'
 import { formatDateTime, PERIODS } from '../lib/utils'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
@@ -10,6 +10,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   analyzing:         { label: 'Анализ GPT-4o',       color: 'bg-indigo-100 text-indigo-700', icon: Loader2 },
   generating_report: { label: 'Генерация отчёта',    color: 'bg-cyan-100 text-cyan-700',     icon: Loader2 },
   completed:         { label: 'Завершено',           color: 'bg-green-100 text-green-700',   icon: CheckCircle2 },
+  cancelled:         { label: 'Отменено',             color: 'bg-orange-100 text-orange-700', icon: XCircle },
   failed:            { label: 'Ошибка',              color: 'bg-red-100 text-red-700',       icon: AlertCircle },
   report_failed:     { label: 'Ошибка отчёта',       color: 'bg-red-100 text-red-700',       icon: AlertCircle },
 }
@@ -68,7 +69,7 @@ function OverallProgress({ job }: { job: ExportJob }) {
   const total = job.total_calls
   if (total <= 0 && job.status === 'pending') return null
 
-  const isFinished = ['completed', 'failed', 'report_failed'].includes(job.status)
+  const isFinished = ['completed', 'failed', 'report_failed', 'cancelled'].includes(job.status)
 
   // Calculate overall progress: 4 stages, each worth 25%
   let overall = 0
@@ -102,7 +103,7 @@ function OverallProgress({ job }: { job: ExportJob }) {
       </div>
       <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${isFinished ? (job.status === 'completed' ? 'bg-green-500' : 'bg-red-500') : 'bg-blue-500'}`}
+          className={`h-full rounded-full transition-all duration-500 ${isFinished ? (job.status === 'completed' ? 'bg-green-500' : job.status === 'cancelled' ? 'bg-orange-400' : 'bg-red-500') : 'bg-blue-500'}`}
           style={{ width: `${overall}%` }}
         />
       </div>
@@ -144,7 +145,7 @@ export default function Exports() {
   // Poll active jobs
   useEffect(() => {
     const activeJobs = exports.filter(e =>
-      !['completed', 'failed', 'report_failed'].includes(e.status)
+      !['completed', 'failed', 'report_failed', 'cancelled'].includes(e.status)
     )
     if (activeJobs.length === 0) return
 
@@ -170,6 +171,18 @@ export default function Exports() {
       setExports(prev => [job, ...prev])
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleCancel = async (jobId: number) => {
+    if (!confirm('Остановить выгрузку?')) return
+    try {
+      await cancelExport(jobId)
+      setExports(prev =>
+        prev.map(e => e.id === jobId ? { ...e, status: 'cancelled' } : e)
+      )
+    } catch {
+      alert('Не удалось отменить')
     }
   }
 
@@ -237,7 +250,8 @@ export default function Exports() {
             const cfg = STATUS_CONFIG[job.status] || STATUS_CONFIG.pending
             const StatusIcon = cfg.icon
             const time = elapsed(job)
-            const isActive = !['completed', 'failed', 'report_failed', 'pending'].includes(job.status)
+            const isActive = !['completed', 'failed', 'report_failed', 'pending', 'cancelled'].includes(job.status)
+            const canCancel = !['completed', 'failed', 'report_failed', 'cancelled'].includes(job.status)
 
             return (
               <div key={job.id} className="bg-white rounded-xl border p-5">
@@ -251,6 +265,15 @@ export default function Exports() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {canCancel && (
+                      <button
+                        onClick={() => handleCancel(job.id)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm hover:bg-red-100 transition-colors"
+                      >
+                        <StopCircle size={14} />
+                        Остановить
+                      </button>
+                    )}
                     {job.status === 'completed' && job.report_path && (
                       <button
                         onClick={() => handleDownloadReport(job.id)}

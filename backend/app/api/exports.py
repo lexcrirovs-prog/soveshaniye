@@ -1,8 +1,10 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ExportJob
+from app.models import Call, ExportJob
 from app.schemas import ExportJobCreate, ExportJobOut
 from app.services.bitrix import get_period_dates
 from app.services.storage import storage_service
@@ -45,6 +47,26 @@ def get_export(job_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Export job not found")
     return job
+
+
+@router.post("/{job_id}/cancel")
+def cancel_export(job_id: int, db: Session = Depends(get_db)):
+    """Cancel a running export job."""
+    job = db.query(ExportJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Export job not found")
+    if job.status in ("completed", "failed", "cancelled"):
+        raise HTTPException(status_code=400, detail=f"Job already {job.status}")
+
+    job.status = "cancelled"
+    job.finished_at = datetime.now()
+    db.commit()
+
+    # Purge pending Celery tasks for this job's calls
+    from app.tasks.celery_app import celery_app
+    celery_app.control.purge()
+
+    return {"status": "cancelled", "job_id": job.id}
 
 
 @router.get("/{job_id}/report")

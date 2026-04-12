@@ -219,6 +219,9 @@ export const createExport = (period: string, departmentId?: number) =>
 export const fetchExport = (id: number) =>
   api.get<ExportJob>(`/exports/${id}`).then(r => r.data)
 
+export const cancelExport = (id: number) =>
+  api.post(`/exports/${id}/cancel`).then(r => r.data)
+
 export const fetchExportReport = (id: number) =>
   api.get<{ url: string }>(`/exports/${id}/report`).then(r => r.data)
 
