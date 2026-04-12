@@ -59,6 +59,12 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   celery-worker:
     build: ./backend
@@ -93,6 +99,9 @@ services:
       - /app/node_modules
     environment:
       - VITE_API_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
 
   nginx:
     image: nginx:alpine
