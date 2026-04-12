@@ -7,6 +7,12 @@ celery_app = Celery(
     "call_analytics",
     broker=settings.redis_url,
     backend=settings.redis_url,
+    include=[
+        "app.tasks.export_task",
+        "app.tasks.transcribe_task",
+        "app.tasks.analyze_task",
+        "app.tasks.report_task",
+    ],
 )
 
 celery_app.conf.update(
@@ -29,4 +35,3 @@ celery_app.conf.update(
     },
 )
 
-celery_app.autodiscover_tasks(["app.tasks"])
