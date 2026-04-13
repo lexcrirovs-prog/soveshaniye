@@ -70,7 +70,7 @@ services:
 
   celery-worker:
     build: ./backend
-    command: celery -A app.tasks.celery_app worker --loglevel=info -c 2
+    command: celery -A app.tasks.celery_app worker --loglevel=info -c 8
     env_file: .env
     environment:
       - PYTHONPATH=/app

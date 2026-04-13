@@ -47,4 +47,8 @@ app.include_router(webhooks.router)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "whisper_provider": settings.whisper_provider,
+        "openai_key_set": bool(settings.openai_api_key),
+    }

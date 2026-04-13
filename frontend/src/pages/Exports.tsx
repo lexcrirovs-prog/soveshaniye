@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Play, RefreshCw, Download, CheckCircle2, Loader2, Clock, AlertCircle, StopCircle, XCircle } from 'lucide-react'
+import { Play, RefreshCw, Download, CheckCircle2, Loader2, Clock, AlertCircle, StopCircle, XCircle, Ban } from 'lucide-react'
 import { fetchExports, createExport, fetchExport, fetchExportReport, cancelExport, type ExportJob } from '../api/client'
 import { formatDateTime, PERIODS } from '../lib/utils'
 
@@ -10,7 +10,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   analyzing:         { label: 'Анализ GPT-4o',       color: 'bg-indigo-100 text-indigo-700', icon: Loader2 },
   generating_report: { label: 'Генерация отчёта',    color: 'bg-cyan-100 text-cyan-700',     icon: Loader2 },
   completed:         { label: 'Завершено',           color: 'bg-green-100 text-green-700',   icon: CheckCircle2 },
-  cancelled:         { label: 'Отменено',             color: 'bg-orange-100 text-orange-700', icon: XCircle },
+  cancelled:         { label: 'Отменено',            color: 'bg-orange-100 text-orange-700', icon: XCircle },
   failed:            { label: 'Ошибка',              color: 'bg-red-100 text-red-700',       icon: AlertCircle },
   report_failed:     { label: 'Ошибка отчёта',       color: 'bg-red-100 text-red-700',       icon: AlertCircle },
 }
@@ -27,38 +27,56 @@ function pct(value: number, total: number): number {
   return Math.min(Math.round((value / total) * 100), 100)
 }
 
-function StageRow({ label, value, total, isActive, isDone }: {
-  label: string; value: number; total: number; isActive: boolean; isDone: boolean
+type StageState = 'done' | 'active' | 'skipped' | 'waiting'
+
+function StageRow({ label, value, total, state }: {
+  label: string; value: number; total: number; state: StageState
 }) {
   const percent = pct(value, total)
-  const barColor = isDone ? 'bg-green-500' : isActive ? 'bg-blue-500' : 'bg-gray-200'
-  const textColor = isDone ? 'text-green-600' : isActive ? 'text-blue-600' : 'text-gray-400'
+
+  const barColor = {
+    done: 'bg-green-500',
+    active: 'bg-blue-500',
+    skipped: 'bg-red-300',
+    waiting: 'bg-gray-200',
+  }[state]
+
+  const textEl = {
+    done: (
+      <span className="flex items-center justify-end gap-1 text-green-600">
+        <CheckCircle2 size={12} /> 100%
+      </span>
+    ),
+    active: (
+      <span className="flex items-center justify-end gap-1 text-blue-600">
+        <Loader2 size={12} className="animate-spin" /> {percent}%
+      </span>
+    ),
+    skipped: (
+      <span className="flex items-center justify-end gap-1 text-red-500">
+        <Ban size={12} /> {total > 0 ? `${percent}%` : 'Не выполнено'}
+      </span>
+    ),
+    waiting: (
+      <span className="text-gray-400">{total > 0 ? `${percent}%` : '—'}</span>
+    ),
+  }[state]
+
+  const labelColor = state === 'skipped' ? 'text-red-500 font-semibold' : 'text-gray-600'
 
   return (
     <div className="flex items-center gap-3">
-      <div className="w-28 text-xs font-medium text-gray-600 text-right shrink-0">{label}</div>
-      <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+      <div className={`w-28 text-xs font-medium text-right shrink-0 ${labelColor}`}>{label}</div>
+      <div className={`flex-1 h-3 rounded-full overflow-hidden ${state === 'skipped' ? 'bg-red-100' : 'bg-gray-100'}`}>
         <div
           className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-          style={{ width: `${isDone ? 100 : percent}%` }}
+          style={{ width: `${state === 'done' ? 100 : percent}%` }}
         />
       </div>
-      <div className={`w-20 text-xs font-semibold text-right shrink-0 ${textColor}`}>
-        {isDone ? (
-          <span className="flex items-center justify-end gap-1">
-            <CheckCircle2 size={12} /> 100%
-          </span>
-        ) : isActive ? (
-          <span className="flex items-center justify-end gap-1">
-            <Loader2 size={12} className="animate-spin" /> {percent}%
-          </span>
-        ) : total > 0 ? (
-          `${percent}%`
-        ) : (
-          '—'
-        )}
+      <div className="w-20 text-xs font-semibold text-right shrink-0">
+        {textEl}
       </div>
-      <div className="w-24 text-xs text-gray-400 text-right shrink-0">
+      <div className={`w-24 text-xs text-right shrink-0 ${state === 'skipped' ? 'text-red-400' : 'text-gray-400'}`}>
         {total > 0 ? `${value} / ${total}` : ''}
       </div>
     </div>
@@ -69,9 +87,10 @@ function OverallProgress({ job }: { job: ExportJob }) {
   const total = job.total_calls
   if (total <= 0 && job.status === 'pending') return null
 
-  const isFinished = ['completed', 'failed', 'report_failed', 'cancelled'].includes(job.status)
+  const isStopped = ['cancelled', 'failed', 'report_failed'].includes(job.status)
+  const isSuccess = job.status === 'completed'
 
-  // Calculate overall progress: 4 stages, each worth 25%
+  // Calculate real overall progress (not 100% if cancelled)
   let overall = 0
   if (total > 0) {
     overall += pct(job.processed, total) * 0.25
@@ -79,16 +98,49 @@ function OverallProgress({ job }: { job: ExportJob }) {
     overall += pct(job.analyzed, total) * 0.25
   }
   if (job.status === 'generating_report') overall += 12.5
-  if (isFinished) overall = 100
+  if (isSuccess) overall = 100
+  // If cancelled/failed — show real progress, NOT 100%
 
   const stageOrder = ['pending', 'running', 'transcribing', 'analyzing', 'generating_report', 'completed']
   const currentIdx = stageOrder.indexOf(job.status)
 
-  const isStageActive = (activeStatuses: string[]) => activeStatuses.includes(job.status)
-  const isStageDone = (activeStatuses: string[]) => {
+  function getStageState(activeStatuses: string[], field: string | null): StageState {
     const stageIdx = Math.max(...activeStatuses.map(s => stageOrder.indexOf(s)))
-    return currentIdx > stageIdx || isFinished
+
+    // Stage is done if we've moved past it AND it's 100% complete
+    if (isSuccess) return 'done'
+
+    // For actively running stage
+    if (activeStatuses.includes(job.status)) return 'active'
+
+    // For stages we've already passed
+    if (currentIdx > stageIdx) return 'done'
+
+    // For stages not yet reached — red if stopped, grey if still going
+    if (isStopped) {
+      // Check if this stage had ANY progress
+      if (field) {
+        const val = job[field as keyof ExportJob] as number
+        if (val > 0 && val < total) return 'skipped' // Partial = red
+        if (val >= total) return 'done' // Completed = green
+      }
+      return 'skipped' // Not started = red
+    }
+
+    return 'waiting'
   }
+
+  const overallBarColor = isSuccess
+    ? 'bg-green-500'
+    : isStopped
+      ? 'bg-red-400'
+      : 'bg-blue-500'
+
+  const overallTextColor = isSuccess
+    ? 'text-green-600'
+    : isStopped
+      ? 'text-red-500'
+      : 'text-blue-600'
 
   return (
     <div className="mt-4 space-y-3">
@@ -96,14 +148,15 @@ function OverallProgress({ job }: { job: ExportJob }) {
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">
           Общий прогресс
+          {isStopped && <span className="ml-2 text-red-500 text-xs font-normal">(остановлено)</span>}
         </span>
-        <span className="text-lg font-bold text-blue-600">
+        <span className={`text-lg font-bold ${overallTextColor}`}>
           {Math.round(overall)}%
         </span>
       </div>
       <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${isFinished ? (job.status === 'completed' ? 'bg-green-500' : job.status === 'cancelled' ? 'bg-orange-400' : 'bg-red-500') : 'bg-blue-500'}`}
+          className={`h-full rounded-full transition-all duration-500 ${overallBarColor}`}
           style={{ width: `${overall}%` }}
         />
       </div>
@@ -111,8 +164,9 @@ function OverallProgress({ job }: { job: ExportJob }) {
       {/* Per-stage breakdown */}
       <div className="space-y-2 pt-1">
         {STAGES.map(stage => {
-          const value = stage.field ? job[stage.field] : (job.status === 'completed' ? 1 : 0)
+          const value = stage.field ? (job[stage.field] ?? 0) : (isSuccess ? 1 : 0)
           const stageTotal = stage.field ? total : 1
+          const state = getStageState(stage.activeStatus, stage.field)
 
           return (
             <StageRow
@@ -120,12 +174,27 @@ function OverallProgress({ job }: { job: ExportJob }) {
               label={stage.label}
               value={value}
               total={stageTotal}
-              isActive={isStageActive(stage.activeStatus)}
-              isDone={isStageDone(stage.activeStatus)}
+              state={state}
             />
           )
         })}
       </div>
+
+      {/* Summary for stopped jobs */}
+      {isStopped && total > 0 && (
+        <div className="mt-2 p-3 bg-red-50 rounded-lg text-xs text-red-700 space-y-1">
+          <p className="font-semibold">Не завершено:</p>
+          {job.processed < total && (
+            <p>- Загрузка: {total - job.processed} из {total} звонков не загружено</p>
+          )}
+          {job.transcribed < total && (
+            <p>- Транскрибация: {total - job.transcribed} из {total} звонков не транскрибировано</p>
+          )}
+          {job.analyzed < total && (
+            <p>- Анализ: {total - job.analyzed} из {total} звонков не проанализировано</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -178,9 +247,9 @@ export default function Exports() {
     if (!confirm('Остановить выгрузку?')) return
     try {
       await cancelExport(jobId)
-      setExports(prev =>
-        prev.map(e => e.id === jobId ? { ...e, status: 'cancelled' } : e)
-      )
+      // Reload to get accurate counters
+      const updated = await fetchExport(jobId)
+      setExports(prev => prev.map(e => e.id === jobId ? updated : e))
     } catch {
       alert('Не удалось отменить')
     }
@@ -200,8 +269,10 @@ export default function Exports() {
     const start = new Date(job.started_at).getTime()
     const end = job.finished_at ? new Date(job.finished_at).getTime() : Date.now()
     const sec = Math.floor((end - start) / 1000)
-    const m = Math.floor(sec / 60)
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
     const s = sec % 60
+    if (h > 0) return `${h} ч ${m} мин`
     if (m > 0) return `${m} мин ${s} сек`
     return `${s} сек`
   }
@@ -254,7 +325,7 @@ export default function Exports() {
             const canCancel = !['completed', 'failed', 'report_failed', 'cancelled'].includes(job.status)
 
             return (
-              <div key={job.id} className="bg-white rounded-xl border p-5">
+              <div key={job.id} className={`bg-white rounded-xl border p-5 ${job.status === 'cancelled' ? 'border-orange-200' : job.status === 'failed' ? 'border-red-200' : ''}`}>
                 {/* Header */}
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
