@@ -22,6 +22,7 @@ def create_export(data: ExportJobCreate, db: Session = Depends(get_db)):
         date_from=date_from,
         date_to=date_to,
         department_id=data.department_id,
+        whisper_provider=data.whisper_provider,
         status="pending",
     )
     db.add(job)

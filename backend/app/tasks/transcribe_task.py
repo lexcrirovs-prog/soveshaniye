@@ -20,11 +20,19 @@ def _increment_transcribed(db, call: Call):
         .where(ExportJob.id == call.export_job_id)
         .values(transcribed=ExportJob.transcribed + 1)
     )
-    # Update job status to 'transcribing' if still in earlier stage
     job = db.query(ExportJob).get(call.export_job_id)
     if job and job.status in ("running", "transcribing"):
         job.status = "transcribing"
     db.commit()
+
+
+def _get_whisper_provider(db, call: Call) -> str:
+    """Get whisper provider from the export job."""
+    if call.export_job_id:
+        job = db.query(ExportJob).get(call.export_job_id)
+        if job and job.whisper_provider:
+            return job.whisper_provider
+    return "openai"
 
 
 @celery_app.task(name="app.tasks.transcribe_task.transcribe_call", bind=True, max_retries=2)
@@ -47,40 +55,54 @@ def transcribe_call(self, call_id: int):
 
         if not call.audio_path:
             logger.error("Call %d has no audio", call_id)
+            _increment_transcribed(db, call)
             return
 
         # Skip if already transcribed
         existing = db.query(Transcript).filter_by(call_id=call_id).first()
         if existing:
-            logger.info("Call %d already transcribed", call_id)
+            logger.info("Call %d already transcribed, triggering analysis", call_id)
+            _increment_transcribed(db, call)
             from app.tasks.analyze_task import analyze_call_task
             analyze_call_task.delay(call_id)
             return
 
         # Download audio from MinIO
+        logger.info("Downloading audio for call %d from MinIO...", call_id)
         audio_data = storage_service.download_audio(call.audio_path)
         if not audio_data:
-            logger.error("Failed to download audio for call %d", call_id)
+            logger.error("Failed to download audio for call %d (path: %s)", call_id, call.audio_path)
             call.status = "transcription_failed"
             _increment_transcribed(db, call)
             return
+
+        logger.info("Audio downloaded for call %d: %d bytes", call_id, len(audio_data))
+
+        # Get whisper provider from job
+        provider = _get_whisper_provider(db, call)
 
         # Transcribe
         call.status = "transcribing"
         db.commit()
 
-        result = transcribe(audio_data)
+        logger.info("Starting transcription for call %d via %s...", call_id, provider)
+        result = transcribe(audio_data, provider=provider)
+
         if not result:
+            logger.error("Transcription returned None for call %d via %s", call_id, provider)
             call.status = "transcription_failed"
             _increment_transcribed(db, call)
             return
+
+        if not result.get("text"):
+            logger.warning("Transcription returned empty text for call %d", call_id)
 
         # Save transcript
         transcript = Transcript(
             call_id=call_id,
             text=result["text"],
             language=result["language"],
-            model_used="small",
+            model_used=f"whisper-1-{provider}" if provider == "openai" else "faster-whisper",
             confidence=result["confidence"],
             segments=result["segments"],
         )
@@ -88,7 +110,7 @@ def transcribe_call(self, call_id: int):
         call.status = "transcribed"
         _increment_transcribed(db, call)
 
-        logger.info("Transcribed call %d: %d chars", call_id, len(result["text"]))
+        logger.info("Transcribed call %d via %s: %d chars", call_id, provider, len(result["text"]))
 
         # Trigger analysis
         from app.tasks.analyze_task import analyze_call_task

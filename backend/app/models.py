@@ -123,6 +123,7 @@ class ExportJob(Base):
     date_from = Column(DateTime(timezone=True))
     date_to = Column(DateTime(timezone=True))
     department_id = Column(Integer)
+    whisper_provider = Column(String(20), default="openai")  # "openai" or "local"
     status = Column(String(20), default="pending")
     started_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))

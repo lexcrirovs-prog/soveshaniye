@@ -121,6 +121,7 @@ class CallListResponse(BaseModel):
 class ExportJobCreate(BaseModel):
     period: str  # "1d", "7d", "14d", "30d", "quarter", "year"
     department_id: Optional[int] = None
+    whisper_provider: str = "openai"  # "openai" or "local"
 
 
 class ExportJobOut(BaseModel):
@@ -129,6 +130,7 @@ class ExportJobOut(BaseModel):
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     department_id: Optional[int] = None
+    whisper_provider: str = "openai"
     status: str = "pending"
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None

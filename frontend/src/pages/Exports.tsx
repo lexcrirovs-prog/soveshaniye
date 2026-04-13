@@ -199,10 +199,16 @@ function OverallProgress({ job }: { job: ExportJob }) {
   )
 }
 
+const WHISPER_PROVIDERS = [
+  { value: 'openai', label: 'OpenAI API (быстро, облако)', desc: 'Whisper API — быстрая транскрибация через облако OpenAI' },
+  { value: 'local',  label: 'Локально (медленно, CPU)',    desc: 'faster-whisper — транскрибация на вашем компьютере' },
+]
+
 export default function Exports() {
   const [exports, setExports] = useState<ExportJob[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPeriod, setSelectedPeriod] = useState('7d')
+  const [selectedProvider, setSelectedProvider] = useState('openai')
   const [creating, setCreating] = useState(false)
 
   const load = useCallback(() => {
@@ -236,7 +242,7 @@ export default function Exports() {
   const handleCreate = async () => {
     setCreating(true)
     try {
-      const job = await createExport(selectedPeriod)
+      const job = await createExport(selectedPeriod, selectedProvider)
       setExports(prev => [job, ...prev])
     } finally {
       setCreating(false)
@@ -289,16 +295,31 @@ export default function Exports() {
       {/* New export */}
       <div className="bg-white rounded-xl border p-6">
         <h2 className="font-semibold mb-4">Новая выгрузка</h2>
-        <div className="flex items-center gap-4">
-          <select
-            value={selectedPeriod}
-            onChange={e => setSelectedPeriod(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm"
-          >
-            {PERIODS.map(({ value, label }) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Период</label>
+            <select
+              value={selectedPeriod}
+              onChange={e => setSelectedPeriod(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm"
+            >
+              {PERIODS.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Транскрибация</label>
+            <select
+              value={selectedProvider}
+              onChange={e => setSelectedProvider(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm"
+            >
+              {WHISPER_PROVIDERS.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
           <button
             onClick={handleCreate}
             disabled={creating}
@@ -308,6 +329,9 @@ export default function Exports() {
             {creating ? 'Запуск...' : 'Запустить выгрузку'}
           </button>
         </div>
+        <p className="mt-2 text-xs text-gray-400">
+          {WHISPER_PROVIDERS.find(p => p.value === selectedProvider)?.desc}
+        </p>
       </div>
 
       {/* Jobs list */}
@@ -363,6 +387,9 @@ export default function Exports() {
                   {job.date_from && <span>С: {formatDateTime(job.date_from)}</span>}
                   {job.date_to && <span>По: {formatDateTime(job.date_to)}</span>}
                   <span>Звонков: {job.total_calls}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-xs ${job.whisper_provider === 'openai' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {job.whisper_provider === 'openai' ? 'OpenAI Whisper' : 'Локальный Whisper'}
+                  </span>
                   {time && <span>Время: {time}</span>}
                 </div>
 

@@ -110,6 +110,7 @@ export interface ExportJob {
   date_from?: string
   date_to?: string
   department_id?: number
+  whisper_provider: string
   status: string
   started_at?: string
   finished_at?: string
@@ -213,8 +214,8 @@ export const deleteScript = (id: number) =>
 export const fetchExports = () =>
   api.get<ExportJob[]>('/exports').then(r => r.data)
 
-export const createExport = (period: string, departmentId?: number) =>
-  api.post<ExportJob>('/exports', { period, department_id: departmentId }).then(r => r.data)
+export const createExport = (period: string, whisperProvider: string = 'openai', departmentId?: number) =>
+  api.post<ExportJob>('/exports', { period, whisper_provider: whisperProvider, department_id: departmentId }).then(r => r.data)
 
 export const fetchExport = (id: number) =>
   api.get<ExportJob>(`/exports/${id}`).then(r => r.data)
